@@ -1,29 +1,42 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import Home from './pages/Home'
-import Chat from './pages/Chat'
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import LoginPage from "./pages/Login";
+import RegisterPage from "./pages/Register";
+import auth from "./services/auth";
 
-function App() {
+function Home() {
   return (
-    <Router>
-      <div className="min-h-screen bg-black relative overflow-hidden">
-        {/* Animated background elements - Red, Black, Gold theme */}
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 -left-48 w-[500px] h-[500px] bg-primary-600/15 rounded-full blur-3xl animate-float"></div>
-          <div className="absolute bottom-1/4 -right-48 w-[500px] h-[500px] bg-secondary-500/15 rounded-full blur-3xl animate-float" style={{ animationDelay: '1.5s' }}></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary-500/8 rounded-full blur-3xl animate-pulse-slow"></div>
-          <div className="absolute top-10 right-1/4 w-80 h-80 bg-secondary-400/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '0.5s' }}></div>
-        </div>
-
-        {/* Main content */}
-        <div className="relative z-10">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/chat/:conversationId" element={<Chat />} />
-          </Routes>
-        </div>
+    <div className="min-h-screen flex items-center justify-center">
+      <div>
+        <h1 className="text-3xl font-bold">Welcome</h1>
+        <p className="mt-4">You're logged in (demo)</p>
+        <button onClick={() => { auth.clearToken(); window.location.reload(); }} className="mt-4 px-4 py-2 bg-red-500 text-white rounded">Sign out</button>
       </div>
-    </Router>
-  )
+    </div>
+  );
 }
 
-export default App
+function ProtectedRoute({ children }: { children: JSX.Element }) {
+  const token = auth.getToken();
+  if (!token) return <Navigate to="/login" replace />;
+  return children;
+}
+
+export default function App() {
+  // Set demo mode (true = localStorage fallback). For production, set to false (call server).
+  auth.setDemoMode(true);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/" element={
+          <ProtectedRoute>
+            <Home />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </BrowserRouter>
+  );
+}
