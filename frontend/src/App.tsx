@@ -1,42 +1,13 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import LoginPage from "./pages/Login";
-import RegisterPage from "./pages/Register";
-import auth from "./services/auth";
+import "./App.css";
 
-function Home() {
+function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div>
-        <h1 className="text-3xl font-bold">Welcome</h1>
-        <p className="mt-4">You're logged in (demo)</p>
-        <button onClick={() => { auth.clearToken(); window.location.reload(); }} className="mt-4 px-4 py-2 bg-red-500 text-white rounded">Sign out</button>
-      </div>
+    <div className="App">
+      <h1>Welcome to My Project</h1>
+      <p>This is the default main page (no login system).</p>
     </div>
   );
 }
 
-function ProtectedRoute({ children }: { children: JSX.Element }) {
-  const token = auth.getToken();
-  if (!token) return <Navigate to="/login" replace />;
-  return children;
-}
-
-export default function App() {
-  // Set demo mode (true = localStorage fallback). For production, set to false (call server).
-  auth.setDemoMode(true);
-
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/" element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        } />
-      </Routes>
-    </BrowserRouter>
-  );
-}
+export default App;
