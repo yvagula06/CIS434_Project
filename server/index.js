@@ -15,11 +15,11 @@ app.use(cookieParser());
 
 app.use(cors({
   origin: FRONTEND_ORIGIN,
-  credentials: true // allow cookies
+  credentials: true
 }));
 
-// In-memory user store for demo/dev. Replace with a database in production.
-const users = new Map(); // email -> { id, name, email, passwordHash }
+// In-memory user store
+const users = new Map();
 
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
@@ -50,7 +50,7 @@ app.post('/auth/register', async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000
   });
 
   return res.json({ user: { id: user.id, name: user.name, email: user.email } });
@@ -72,7 +72,7 @@ app.post('/auth/login', async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000
   });
 
   return res.json({ user: { id: user.id, name: user.name, email: user.email } });
