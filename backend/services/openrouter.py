@@ -204,10 +204,11 @@ async def send_to_openrouter_no_stream(
 
 async def get_available_models() -> List[Dict[str, Any]]:
     """
-    Fetch the list of available models from OpenRouter.
+    Fetch the list of available FREE models from OpenRouter.
+    Filters out paid models to only show models with zero cost.
     
     Returns:
-        List[Dict]: List of model dictionaries with details
+        List[Dict]: List of free model dictionaries with details
     
     Raises:
         httpx.HTTPError: If the request fails
@@ -227,10 +228,18 @@ async def get_available_models() -> List[Dict[str, Any]]:
             response.raise_for_status()
             
             data = response.json()
-            models = data.get("data", [])
+            all_models = data.get("data", [])
             
-            logger.info(f"Retrieved {len(models)} models from OpenRouter")
-            return models
+            # Filter for free models only
+            # A model is free if both prompt and completion prices are 0
+            free_models = [
+                model for model in all_models
+                if model.get("pricing", {}).get("prompt") == "0" and
+                   model.get("pricing", {}).get("completion") == "0"
+            ]
+            
+            logger.info(f"Retrieved {len(all_models)} total models, filtered to {len(free_models)} free models")
+            return free_models
             
     except httpx.HTTPError as e:
         logger.error(f"Error fetching models from OpenRouter: {e}")
