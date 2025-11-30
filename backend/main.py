@@ -8,13 +8,18 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from dotenv import load_dotenv
 import httpx
 import json
+import hashlib
+
+from sqlalchemy.orm import Session
+from database import get_db, init_db
+from models import User
 
 # Import OpenRouter service
 from services.openrouter import send_to_openrouter, get_available_models
@@ -45,6 +50,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def on_startup() -> None:
+    """Ensure database tables exist when the app starts."""
+    init_db()
+
 # Environment variables
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
@@ -52,6 +62,9 @@ PORT = int(os.getenv("PORT", 8001))
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "openai/gpt-3.5-turbo")
 APP_TITLE = os.getenv("APP_TITLE", "Open Chat API")
 APP_URL = os.getenv("APP_URL", "http://localhost:8001")
+
+SESSION_COOKIE_NAME = "session_token"
+session_store: Dict[str, int] = {}
 
 # In-memory storage
 conversations: Dict[str, dict] = {}
@@ -90,6 +103,27 @@ class SendMessageRequest(BaseModel):
     model: Optional[str] = Field(default=None, description="Override model for this message")
 
 
+class UserCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserRead(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    is_active: bool
+
+    class Config:
+        orm_mode = True
+
+
 # ===== Helper Functions =====
 
 def get_openrouter_headers() -> dict:
@@ -112,6 +146,21 @@ def validate_api_key():
         )
 
 
+def hash_password(password: str) -> str:
+    """Very basic password hashing helper (for demo/class use)."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return hash_password(plain_password) == hashed_password
+
+
+def create_session_token(user_id: int) -> str:
+    token = str(uuid4())
+    session_store[token] = user_id
+    return token
+
+
 # ===== API Endpoints =====
 
 @app.get("/")
@@ -131,6 +180,85 @@ async def health_check():
     """Docker health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+
+# ---- AUTH ENDPOINTS (DB-backed users) ----
+
+@app.post("/auth/register", response_model=UserRead)
+def register_user(payload: UserCreate, response: Response, db: Session = Depends(get_db)):
+    """Create a new user and set an httpOnly session cookie."""
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user = User(
+        name=payload.name,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_session_token(user.id)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,   # set True in production with HTTPS
+        path="/",
+    )
+    return user
+
+
+@app.post("/auth/login", response_model=UserRead)
+def login_user(payload: UserLogin, response: Response, db: Session = Depends(get_db)):
+    """Log in an existing user and set session cookie."""
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_session_token(user.id)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        path="/",
+    )
+    return user
+
+
+@app.get("/auth/me", response_model=UserRead)
+def get_current_user(
+    db: Session = Depends(get_db),
+    session_token: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    """Return the currently logged-in user based on the session cookie."""
+    if not session_token or session_token not in session_store:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user_id = session_store[session_token]
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+@app.post("/auth/logout")
+def logout_user(
+    response: Response,
+    session_token: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    """Clear the session cookie and remove the session from memory."""
+    if session_token and session_token in session_store:
+        del session_store[session_token]
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"status": "ok"}
+
+
+# ---- Existing model + conversation endpoints ----
 
 @app.get("/models")
 async def get_models():
